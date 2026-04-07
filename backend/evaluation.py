@@ -1,7 +1,7 @@
 """Evaluation engine: builds prompts, calls Ollama, parses AI responses.
 
-Optimized for CPU-only Ollama inference (no GPU). Uses per-question evaluation
-with small prompts instead of one giant prompt, then aggregates results.
+Optimized for cloud-inference Ollama models. Uses per-question evaluation
+with concise prompts then aggregates results.
 
 Stage 3: Enhanced with officer thinking, weakness bullets, detailed red flags,
 approval probability analysis, and tiered action plans.
@@ -22,15 +22,17 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
 # ── Enhanced per-question prompt (Stage 3) ─────────────────────────────────
 
-PER_Q_PROMPT = """You are a US consular officer evaluating a B1/B2 visa interview answer under 214(b).
+PER_Q_PROMPT = """You are a US consular officer evaluating a B1/B2 visa interview answer under INA 214(b).
 
-Applicant: {citizenship}, {employment}, visa={visa_type}, prior_refusal={prior_refusal}, us_family={us_family}
+Applicant: {citizenship}, age {age}, {marital_status}, {employment}, visa={visa_type}, prior_refusal={prior_refusal}, us_family={us_family}, applicants={applicant_count}
 
 Question: "{question}"
 Answer: "{answer}"
 
+Evaluate from the perspective of a real consular officer. Be direct and realistic.
+
 Respond ONLY with this JSON:
-{{"rating":"<strong|weak|red_flag>","feedback":"<2 sentences>","officer_thinking":"<2-3 sentences from officer POV, first person, what you'd really think hearing this answer>","weakness_bullets":["<bullet1>","<bullet2>"],"suggested_answer":"<better 2-3 sentence answer using [BRACKETS] for personal details>","suggested_why_better":["<reason1>","<reason2>"],"red_flags":["<flag or empty list>"],"dimension":"<return_intent|purpose_clarity|financial_credibility|consistency|conciseness>","score":<0-10>}}"""
+{{"rating":"<strong|weak|red_flag>","feedback":"<2 sentences>","officer_thinking":"<2-3 sentences from officer POV, first person, blunt and realistic — what you'd actually think hearing this>","weakness_bullets":["<bullet1>","<bullet2>"],"suggested_answer":"<better 2-3 sentence answer using [BRACKETS] for personal details>","suggested_why_better":["<reason1>","<reason2>"],"red_flags":["<flag or empty list>"],"dimension":"<return_intent|purpose_clarity|financial_credibility|consistency|conciseness>","score":<0-10>}}"""
 
 # ── Category to dimension mapping ──────────────────────────────────────────
 
@@ -43,6 +45,7 @@ CAT_TO_DIM = {
     "us_contacts": "return_intent",
     "business": "purpose_clarity",
     "challenge": "conciseness",
+    "group": "consistency",
 }
 
 DIM_MAX = {
@@ -89,12 +92,16 @@ def _compact_profile(profile: ProfileInput) -> dict:
         "visa_type": profile.visa_type.value,
         "prior_refusal": profile.prior_refusal,
         "us_family": profile.us_family,
+        "age": profile.age,
+        "marital_status": profile.marital_status.value,
+        "applicant_count": profile.applicant_count,
     }
 
 
 def _profile_summary(profile: ProfileInput) -> str:
     parts = [profile.employment.value.replace("_", " ").title()]
     parts.append(profile.citizenship)
+    parts.append(f"Age {profile.age}, {profile.marital_status.value}")
     if profile.prior_refusal:
         parts.append("Prior Refusal")
     if profile.prior_travel:
@@ -103,6 +110,8 @@ def _profile_summary(profile: ProfileInput) -> str:
         parts.append("First-time US Applicant")
     if profile.us_family:
         parts.append(f"US Family ({profile.family_status.value})")
+    if profile.applicant_count > 1:
+        parts.append(f"Group ({profile.applicant_count} applicants)")
     return ", ".join(parts)
 
 
@@ -113,23 +122,10 @@ async def evaluate_session(
     """Evaluate answers using AI for key questions and keyword fallback for the rest."""
     prof = _compact_profile(profile)
 
-    PRIORITY_PREFIXES = ["c", "p", "e", "r", "f"]
-
-    ai_indices = set()
-    for prefix in PRIORITY_PREFIXES:
-        if len(ai_indices) >= 2:
-            break
-        for i, ans in enumerate(answers):
-            if ans.question_id.startswith(prefix) and i not in ai_indices:
-                ai_indices.add(i)
-                break
-
+    # Cloud model is fast — evaluate ALL questions with AI
     per_q_results = []
     for i, ans in enumerate(answers):
-        if i in ai_indices:
-            result = await _evaluate_one(prof, ans)
-        else:
-            result = _keyword_fallback(ans)
+        result = await _evaluate_one(prof, ans)
         result["question_id"] = ans.question_id
         result["question_text"] = ans.question_text
         result["user_answer"] = ans.answer_text
@@ -298,6 +294,10 @@ def _calculate_approval_analysis(
     if not profile.prior_travel:
         risk_deductions += 3
         profile_risk_factors.append("First-time US visa applicant (higher scrutiny)")
+
+    if profile.marital_status.value == "single" and profile.age < 30:
+        risk_deductions += 4
+        profile_risk_factors.append("Young and unmarried — weaker ties to home country")
 
     # Red flag deductions
     for flag in red_flags:

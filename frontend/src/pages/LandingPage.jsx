@@ -17,13 +17,16 @@ export default function LandingPage() {
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center text-sm text-gray-500">
           <span className="bg-gray-100 px-3 py-1 rounded-full">
-            ✓ Questions based on actual consular patterns
+            ✓ Realistic officer questions
           </span>
           <span className="bg-gray-100 px-3 py-1 rounded-full">
-            ✓ Specific per-answer feedback
+            ✓ Voice &amp; text input
           </span>
           <span className="bg-gray-100 px-3 py-1 rounded-full">
-            ✓ 100% free
+            ✓ Officer speaks aloud
+          </span>
+          <span className="bg-gray-100 px-3 py-1 rounded-full">
+            ✓ Solo &amp; group interviews
           </span>
         </div>
 

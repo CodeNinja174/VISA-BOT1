@@ -29,6 +29,10 @@ const defaultProfile = {
   prior_travel: false,
   monthly_income_usd: '1500-3000',
   planned_days: 14,
+  applicant_count: 1,
+  marital_status: 'single',
+  age: 28,
+  travel_companions: '',
 }
 
 export default function ProfileSetup() {
@@ -83,7 +87,7 @@ export default function ProfileSetup() {
     <div className="max-w-2xl mx-auto py-10 px-4">
       <h1 className="text-2xl font-bold mb-1">Profile Setup</h1>
       <p className="text-gray-500 mb-6 text-sm">
-        Tell us about your visa situation so we can personalize your interview.
+        Tell us about your visa situation so we can personalize your mock interview.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -231,6 +235,70 @@ export default function ProfileSetup() {
             onChange={set('planned_days')}
             className={selectClass}
           />
+        </div>
+
+        {/* Applicant Count */}
+        <div>
+          <label className={labelClass}>How many people are being interviewed?</label>
+          <div className="flex items-center gap-3">
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setProfile((p) => ({ ...p, applicant_count: n }))}
+                className={`w-10 h-10 rounded-lg border text-sm font-semibold transition cursor-pointer ${
+                  profile.applicant_count === n
+                    ? 'bg-blue-700 text-white border-blue-700'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {profile.applicant_count > 1
+              ? `Group interview — ${profile.applicant_count} applicants at the window`
+              : 'Solo interview'}
+          </p>
+        </div>
+
+        {/* Travel Companions */}
+        {profile.applicant_count > 1 && (
+          <div>
+            <label className={labelClass}>Who are your co-applicants?</label>
+            <input
+              type="text"
+              value={profile.travel_companions}
+              onChange={set('travel_companions')}
+              placeholder="e.g. spouse, brother and sister-in-law"
+              className={selectClass}
+            />
+          </div>
+        )}
+
+        {/* Age */}
+        <div>
+          <label className={labelClass}>Your Age</label>
+          <input
+            type="number"
+            min="18"
+            max="80"
+            value={profile.age}
+            onChange={set('age')}
+            className={selectClass}
+          />
+        </div>
+
+        {/* Marital Status */}
+        <div>
+          <label className={labelClass}>Marital Status</label>
+          <select value={profile.marital_status} onChange={set('marital_status')} className={selectClass}>
+            <option value="single">Single</option>
+            <option value="married">Married</option>
+            <option value="divorced">Divorced</option>
+            <option value="widowed">Widowed</option>
+          </select>
         </div>
 
         {error && <p className="text-red-600 text-sm">{error}</p>}

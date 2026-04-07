@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { evaluateSession, submitAnswer } from '../api'
 
-const MAX_TOTAL_QUESTIONS = 14
+const MAX_TOTAL_QUESTIONS = 16
 
 const COLOR_STYLES = {
   green: { bg: 'bg-green-50', border: 'border-green-300', dot: 'bg-green-500' },
@@ -13,7 +13,6 @@ const COLOR_STYLES = {
 export default function Interview() {
   const navigate = useNavigate()
   const [session, setSession] = useState(null)
-  // Dynamic question queue — starts with original questions, follow-ups get inserted
   const [questionQueue, setQuestionQueue] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [answers, setAnswers] = useState([])
@@ -24,16 +23,35 @@ export default function Interview() {
   const [submitting, setSubmitting] = useState(false)
   const [showOpener, setShowOpener] = useState(true)
 
-  // Per-answer feedback shown inline
-  const [answerFeedback, setAnswerFeedback] = useState([]) // array of {quality, color, hint, contradiction}
+  // Per-answer feedback
+  const [answerFeedback, setAnswerFeedback] = useState([])
   const [activeHint, setActiveHint] = useState(null)
   const hintTimerRef = useRef(null)
 
   // Voice input state
-  const [inputMode, setInputMode] = useState('text') // 'text' or 'voice'
+  const [inputMode, setInputMode] = useState('text')
   const [isListening, setIsListening] = useState(false)
   const [voiceSupported, setVoiceSupported] = useState(false)
   const recognitionRef = useRef(null)
+
+  // TTS & display settings (loaded from briefing settings)
+  const [officerSpeaks, setOfficerSpeaks] = useState(true)
+  const [showQuestionText, setShowQuestionText] = useState(true)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const utteranceRef = useRef(null)
+
+  // Load interview settings from briefing page
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('visa_interview_settings')
+      if (raw) {
+        const s = JSON.parse(raw)
+        if (s.officerSpeaks !== undefined) setOfficerSpeaks(s.officerSpeaks)
+        if (s.showQuestionText !== undefined) setShowQuestionText(s.showQuestionText)
+        if (s.defaultInputMode) setInputMode(s.defaultInputMode)
+      }
+    } catch {}
+  }, [])
 
   // Check for Speech Recognition support
   useEffect(() => {
@@ -81,6 +99,40 @@ export default function Interview() {
     }
   }, [])
 
+  // TTS: speak text aloud as the officer
+  const speakText = useCallback((text) => {
+    if (!officerSpeaks || !window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    const utter = new SpeechSynthesisUtterance(text)
+    utter.lang = 'en-US'
+    utter.rate = 0.95
+    utter.pitch = 0.9
+    // Try to pick a male-sounding English voice
+    const voices = window.speechSynthesis.getVoices()
+    const preferred = voices.find(
+      (v) => v.lang.startsWith('en') && /male|david|james|daniel|google us/i.test(v.name)
+    ) || voices.find((v) => v.lang.startsWith('en-US'))
+    if (preferred) utter.voice = preferred
+    utter.onstart = () => setIsSpeaking(true)
+    utter.onend = () => setIsSpeaking(false)
+    utter.onerror = () => setIsSpeaking(false)
+    utteranceRef.current = utter
+    window.speechSynthesis.speak(utter)
+  }, [officerSpeaks])
+
+  // Cleanup TTS on unmount
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel()
+    }
+  }, [])
+
+  // Pre-load voices (some browsers need this)
+  useEffect(() => {
+    window.speechSynthesis?.getVoices()
+    window.speechSynthesis?.addEventListener?.('voiceschanged', () => {})
+  }, [])
+
   useEffect(() => {
     const stored = localStorage.getItem('visa_session')
     if (!stored) {
@@ -100,13 +152,35 @@ export default function Interview() {
     }
   }, [activeHint])
 
+  // Speak each new question when currentIndex changes (after first question)
+  const prevIndexRef = useRef(-1)
+  useEffect(() => {
+    if (!showOpener && currentIndex > 0 && currentIndex < questionQueue.length && currentIndex !== prevIndexRef.current) {
+      speakText(questionQueue[currentIndex].question_text)
+    }
+    prevIndexRef.current = currentIndex
+  }, [currentIndex, showOpener, questionQueue, speakText])
+
+  // Speak opener greeting on first render
+  useEffect(() => {
+    if (showOpener && session) {
+      setTimeout(() => speakText('Good morning. Can I see your passport and appointment confirmation?'), 500)
+    }
+  }, [showOpener, session, speakText])
+
   if (!session) return null
 
   const totalAnswered = answers.length
   const totalQuestions = questionQueue.length
   const isFinished = currentIndex >= totalQuestions
 
-  const handleOpenerContinue = () => setShowOpener(false)
+  const handleOpenerContinue = () => {
+    setShowOpener(false)
+    // Speak the first question after opener
+    if (questionQueue.length > 0) {
+      setTimeout(() => speakText(questionQueue[0].question_text), 300)
+    }
+  }
 
   const startListening = () => {
     if (!recognitionRef.current) return
@@ -131,6 +205,9 @@ export default function Interview() {
 
     // Stop voice recognition if active
     if (isListening) stopListening()
+    // Stop TTS if speaking
+    window.speechSynthesis?.cancel()
+    setIsSpeaking(false)
 
     const q = questionQueue[currentIndex]
     const answerText = currentAnswer.trim()
@@ -209,6 +286,7 @@ export default function Interview() {
   }
 
   const handleFinish = async () => {
+    window.speechSynthesis?.cancel()
     setLoading(true)
     try {
       const result = await evaluateSession(
@@ -236,7 +314,15 @@ export default function Interview() {
             <div className="w-10 h-10 bg-blue-700 rounded-full flex items-center justify-center text-white font-bold text-sm">
               CO
             </div>
-            <span className="text-sm text-gray-500">Consular Officer</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Consular Officer</span>
+              {isSpeaking && (
+                <span className="flex items-center gap-1 text-xs text-blue-600">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+                  Speaking
+                </span>
+              )}
+            </div>
           </div>
 
           <p className="text-lg font-medium text-gray-800">
@@ -341,22 +427,56 @@ export default function Interview() {
 
       {/* Officer question */}
       <div className="bg-white border rounded-xl p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-blue-700 rounded-full flex items-center justify-center text-white font-bold text-sm">
-            CO
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${isSpeaking ? 'bg-blue-600 ring-4 ring-blue-200 animate-pulse' : 'bg-blue-700'}`}>
+              CO
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Consular Officer</span>
+              {isFollowUp && (
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                  Follow-up
+                </span>
+              )}
+              {isSpeaking && (
+                <span className="text-xs text-blue-600 flex items-center gap-1">
+                  <span className="w-1 h-3 bg-blue-500 rounded animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1 h-3 bg-blue-500 rounded animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1 h-3 bg-blue-500 rounded animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Consular Officer</span>
-            {isFollowUp && (
-              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-                Follow-up
-              </span>
-            )}
+
+          {/* Quick controls */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => speakText(currentQ.question_text)}
+              title="Replay question"
+              className="p-1.5 text-gray-400 hover:text-blue-600 transition cursor-pointer"
+            >
+              🔊
+            </button>
+            <button
+              onClick={() => setShowQuestionText((v) => !v)}
+              title={showQuestionText ? 'Hide text' : 'Show text'}
+              className="p-1.5 text-gray-400 hover:text-blue-600 transition cursor-pointer"
+            >
+              {showQuestionText ? '👁' : '👁‍🗨'}
+            </button>
           </div>
         </div>
-        <p className="text-lg font-medium text-gray-800">
-          "{currentQ.question_text}"
-        </p>
+
+        {showQuestionText ? (
+          <p className="text-lg font-medium text-gray-800">
+            "{currentQ.question_text}"
+          </p>
+        ) : (
+          <p className="text-sm text-gray-400 italic">
+            Question text hidden — listen to the officer
+          </p>
+        )}
       </div>
 
       {/* Answer input */}

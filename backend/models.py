@@ -45,6 +45,13 @@ class FundingSource(str, Enum):
     OTHER = "other"
 
 
+class MaritalStatus(str, Enum):
+    SINGLE = "single"
+    MARRIED = "married"
+    DIVORCED = "divorced"
+    WIDOWED = "widowed"
+
+
 class PurposeOfVisit(str, Enum):
     TOURISM = "tourism"
     FAMILY_VISIT = "family_visit"
@@ -66,6 +73,10 @@ class ProfileInput(BaseModel):
     prior_travel: bool = False
     monthly_income_usd: IncomeRange = IncomeRange.R1500_3000
     planned_days: int = Field(default=14, ge=1, le=180)
+    applicant_count: int = Field(default=1, ge=1, le=6)
+    marital_status: MaritalStatus = MaritalStatus.SINGLE
+    age: int = Field(default=30, ge=18, le=80)
+    travel_companions: str = ""  # e.g. "spouse", "spouse and 2 children", "friend"
 
 
 class RiskProfile(BaseModel):

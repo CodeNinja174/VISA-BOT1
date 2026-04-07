@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 # ── Compact real-time evaluation prompt ────────────────────────────────────
 
-REALTIME_EVAL_PROMPT = """You are a US consular officer evaluating a B1/B2 visa answer in real-time under 214(b).
+REALTIME_EVAL_PROMPT = """You are a US consular officer evaluating a B1/B2 visa answer in real-time under INA 214(b).
 
-Applicant: {citizenship}, {employment}, visa={visa_type}, prior_refusal={prior_refusal}, us_family={us_family}
+Applicant: {citizenship}, age {age}, {marital_status}, {employment}, visa={visa_type}, prior_refusal={prior_refusal}, us_family={us_family}, applicants={applicant_count}
 
 Conversation so far:
 {history_text}
@@ -22,7 +22,7 @@ Latest answer: "{answer}"
 
 Tasks:
 1. Rate: strong, weak, or red_flag
-2. If weak/red_flag: write a 1-sentence follow-up question an officer would ask (different from the original). If strong: null.
+2. If weak/red_flag: write a 1-sentence follow-up question a real officer would ask (short, direct, sometimes brusque). If strong: null.
 3. Check if this answer contradicts anything in the conversation history.
 
 Respond ONLY with JSON:
@@ -143,6 +143,9 @@ async def evaluate_answer_realtime(
             "visa_type": profile.visa_type.value,
             "prior_refusal": profile.prior_refusal,
             "us_family": profile.us_family,
+            "age": profile.age,
+            "marital_status": profile.marital_status.value,
+            "applicant_count": profile.applicant_count,
         }
         prompt = REALTIME_EVAL_PROMPT.format(
             history_text=_format_history(conversation_history),
