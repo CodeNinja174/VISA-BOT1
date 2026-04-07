@@ -1,10 +1,19 @@
 # Model Switching Guide — Visa Interview Assistant
 
 ## Current Setup
-- **Active Model**: `qwen2.5:14b`
-- **Provider**: Ollama (CPU inference, 62GB RAM)
-- **GPU**: Quadro P400 2GB (not usable for LLMs — display card only)
+- **Active Model**: `nemotron-3-super:cloud` (120B params)
+- **Provider**: Ollama (cloud inference)
+- **Hardware**: 62GB RAM, Quadro P400 2GB (display only)
 - **Config File**: `backend/.env`
+- **Performance**: ~5–15s per question (cloud inference)
+
+## Model History
+
+| Date | Model | Params | Type | Notes |
+|------|-------|--------|------|-------|
+| Initial | `llama3.1:8b` | 8B | Local CPU | First model, decent quality |
+| Mid 2025 | `qwen2.5:14b` | 14B | Local CPU | Better JSON compliance, ~45–50s/question |
+| Apr 2026 | `nemotron-3-super:cloud` | 120B | Cloud | **Current** — fast, all questions AI-evaluated |
 
 ## How to Switch Models
 
@@ -39,13 +48,16 @@ curl -s http://localhost:8000/api/health
 
 | Model | Pull Command | RAM | Speed/Question | JSON Quality | Overall Quality | Notes |
 |---|---|---|---|---|---|---|
-| **qwen2.5:14b** | `ollama pull qwen2.5:14b` | ~9GB | ~60-70s | Excellent | Excellent | **Current — best balance** |
-| qwen2.5:32b | `ollama pull qwen2.5:32b` | ~19GB | ~2-3min | Excellent | Outstanding | Best quality, but slow |
+| **nemotron-3-super:cloud** | `ollama pull nemotron-3-super:cloud` | N/A (cloud) | ~5-15s | Excellent | Outstanding | **Current — cloud inference, 120B params** |
+| qwen2.5:14b | `ollama pull qwen2.5:14b` | ~9GB | ~60-70s | Excellent | Excellent | Previous model — best local balance |
+| qwen2.5:32b | `ollama pull qwen2.5:32b` | ~19GB | ~2-3min | Excellent | Outstanding | Best local quality, but slow |
 | qwen2.5:7b | `ollama pull qwen2.5:7b` | ~4.7GB | ~35s | Very Good | Good | Faster, lower quality |
 | mistral-small:22b | `ollama pull mistral-small:22b` | ~13GB | ~90s | Good | Very Good | Good alternative to 32b |
 | gemma2:9b | `ollama pull gemma2:9b` | ~5.4GB | ~40s | Good | Good+ | Google's model |
-| llama3.1:8b | `ollama pull llama3.1:8b` | ~4.9GB | ~37s | Decent | Good | Previous model |
+| llama3.1:8b | `ollama pull llama3.1:8b` | ~4.9GB | ~37s | Decent | Good | Original model |
 | llama3.1:70b | `ollama pull llama3.1:70b` | ~40GB | ~8-10min | Good | Excellent | Fits in RAM but very slow |
+
+> **Note:** With the cloud model, all questions are now evaluated by AI (the previous 3-question AI limit was removed). If switching back to a local model, consider re-enabling the AI evaluation limit in `evaluation.py` for performance.
 
 ## Model Selection Criteria
 
@@ -59,6 +71,12 @@ curl -s http://localhost:8000/api/health
 - Strong structured reasoning (bullet points, multi-field JSON)
 - Excellent at role-play and perspective-taking (officer POV)
 - Good at maintaining consistent output format across calls
+
+### Why nemotron-3-super:cloud is the current choice:
+- 120B parameters — significantly better reasoning than local models
+- Cloud inference eliminates hardware bottleneck
+- Fast enough to evaluate ALL questions with AI (no keyword fallback needed)
+- Excellent JSON compliance and instruction following
 
 ## Timeout Configuration
 
@@ -77,7 +95,7 @@ Recommended timeouts:
 
 Also update the frontend timeout in `frontend/src/api.js`:
 ```javascript
-timeout: 300000,  // in milliseconds — increase for larger models
+timeout: 600000,  // in milliseconds — current setting (10 min)
 ```
 
 ## Managing Installed Models

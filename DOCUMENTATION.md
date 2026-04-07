@@ -1,9 +1,9 @@
 # US Visa Mock Interview Assistant — Technical Documentation
 
-> **Version:** 1.0.0  
-> **Last Updated:** July 2025  
-> **Status:** Stages 1–3 Complete | Stage 4 Deferred  
-> **AI Model:** `qwen2.5:14b` via Ollama (CPU inference)
+> **Version:** 2.0.0  
+> **Last Updated:** April 2026  
+> **Status:** Stages 1–3 Complete + Cloud Model + Voice I/O + Group Interviews  
+> **AI Model:** `nemotron-3-super:cloud` (120B params, cloud inference via Ollama)
 
 ---
 
@@ -56,12 +56,14 @@ The **US Visa Mock Interview Assistant** is an AI-powered web application that s
 
 ### What It Does
 
-1. Collects an applicant profile (visa type, citizenship, employment, etc.)
-2. Selects 10–12 personalized questions based on the profile's risk factors
-3. Conducts a simulated interview with **real-time per-answer evaluation**
-4. Dynamically inserts **follow-up questions** when answers are weak or flagged
-5. Detects **contradictions** across the conversation history
-6. Generates a **comprehensive report** with:
+1. Collects an applicant profile (visa type, citizenship, employment, age, marital status, group size, etc.)
+2. Selects 10–14 personalized questions based on the profile's risk factors (including group-specific questions)
+3. **Officer speaks questions aloud** via Text-to-Speech with an animated speaking orb visualizer
+4. Conducts a simulated interview with **real-time per-answer evaluation** (all questions evaluated by AI)
+5. Supports both **voice input (STT)** and text input — user's choice
+6. Dynamically inserts **follow-up questions** when answers are weak or flagged
+7. Detects **contradictions** across the conversation history
+8. Generates a **comprehensive report** with:
    - Overall score (0–100) and risk level
    - 5-dimension breakdown (Return Intent, Purpose Clarity, Financial Credibility, Consistency, Conciseness)
    - Per-question officer thinking, weaknesses, and suggested better answers
@@ -74,35 +76,36 @@ The **US Visa Mock Interview Assistant** is an AI-powered web application that s
 ## 2. Architecture & Tech Stack
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    FRONTEND                          │
-│  React 19 + Vite 8 + Tailwind CSS 4                │
-│  Port 5173 (dev) — proxies /api to backend          │
-│                                                     │
-│  Pages: Landing → Profile → Briefing → Interview    │
-│         → Report                                    │
-│  State: React useState + localStorage               │
-│  HTTP: Axios (timeout 5 min)                        │
-└────────────────────┬────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                      FRONTEND                             │
+│  React 19 + Vite 8 + Tailwind CSS 4                     │
+│  Port 5173 (dev) — proxies /api to backend               │
+│                                                          │
+│  Pages: Landing → Profile → Briefing → Interview → Report│
+│  State: React useState + localStorage                    │
+│  HTTP: Axios (timeout 10 min)                            │
+│  Voice: Web Speech API (SpeechSynthesis + Recognition)   │
+│  Visualizer: Canvas-based SpeakingOrb component          │
+└────────────────────┬─────────────────────────────────────┘
                      │ /api/*
                      ▼
-┌─────────────────────────────────────────────────────┐
-│                    BACKEND                           │
-│  FastAPI + Uvicorn  (Python 3.13)                   │
-│  Port 8000  — CORS: localhost:5173                  │
-│                                                     │
-│  Endpoints: /health, /session/start,                │
-│             /session/answer, /session/evaluate       │
-│  Async HTTP: httpx (timeout 180s)                   │
-└────────────────────┬────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                      BACKEND                              │
+│  FastAPI + Uvicorn  (Python 3.13)                        │
+│  Port 8000  — CORS: localhost:5173, localhost:5174       │
+│                                                          │
+│  Endpoints: /health, /session/start,                     │
+│             /session/answer, /session/evaluate            │
+│  Async HTTP: httpx (timeout 180s)                        │
+└────────────────────┬─────────────────────────────────────┘
                      │ POST /api/generate
                      ▼
-┌─────────────────────────────────────────────────────┐
-│                  OLLAMA (LOCAL LLM)                  │
-│  Model: qwen2.5:14b (9 GB RAM, CPU inference)       │
-│  Port 11434 (default)                               │
-│  ~45–50 sec/question on CPU                         │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│               OLLAMA (CLOUD INFERENCE)                    │
+│  Model: nemotron-3-super:cloud (120B params)             │
+│  Port 11434 (default)                                    │
+│  Cloud inference — fast responses (~5-15s/question)      │
+└──────────────────────────────────────────────────────────┘
 ```
 
 | Layer | Technology | Version |
@@ -135,12 +138,12 @@ VISA/
 │
 ├── backend/
 │   ├── .env                  ← Environment configuration
-│   ├── main.py               ← FastAPI app + endpoints (67 lines)
-│   ├── models.py             ← Pydantic models & enums (280+ lines)
-│   ├── question_bank.py      ← 65 static questions, 8 categories (100+ lines)
-│   ├── question_selector.py  ← Profile-based question selection (95 lines)
-│   ├── realtime_eval.py      ← Per-answer real-time evaluation (350+ lines)
-│   ├── evaluation.py         ← Full session evaluation engine (880+ lines)
+│   ├── main.py               ← FastAPI app + endpoints (82 lines)
+│   ├── models.py             ← Pydantic models & enums (205 lines)
+│   ├── question_bank.py      ← 86 realistic questions, 9 categories (113 lines)
+│   ├── question_selector.py  ← Profile-based question selection + group logic (118 lines)
+│   ├── realtime_eval.py      ← Per-answer real-time evaluation (279 lines)
+│   ├── evaluation.py         ← Full session evaluation engine (573 lines)
 │   └── __pycache__/
 │
 └── frontend/
@@ -152,16 +155,18 @@ VISA/
     ├── node_modules/
     ├── public/
     └── src/
-        ├── main.jsx           ← React root mount (11 lines)
-        ├── App.jsx            ← Route definitions (17 lines)
-        ├── api.js             ← Axios API client (26 lines)
+        ├── main.jsx           ← React root mount
+        ├── App.jsx            ← Route definitions (20 lines)
+        ├── api.js             ← Axios API client (38 lines)
         ├── index.css          ← Tailwind v4 import (1 line)
+        ├── components/
+        │   └── SpeakingOrb.jsx ← Animated speaking visualizer (118 lines)
         └── pages/
-            ├── LandingPage.jsx    ← Hero page (36 lines)
-            ├── ProfileSetup.jsx   ← 12-field intake form (280+ lines)
-            ├── Briefing.jsx       ← Pre-interview rules (35 lines)
-            ├── Interview.jsx      ← Dynamic interview engine (380+ lines)
-            └── Report.jsx         ← 6-section report + download (650+ lines)
+            ├── LandingPage.jsx    ← Hero page (46 lines)
+            ├── ProfileSetup.jsx   ← 16-field intake form + group support (316 lines)
+            ├── Briefing.jsx       ← Pre-interview rules + settings panel (144 lines)
+            ├── Interview.jsx      ← Dynamic interview engine + TTS/STT (572 lines)
+            └── Report.jsx         ← 6-section report + download (546 lines)
 ```
 
 ---
@@ -244,12 +249,12 @@ curl http://localhost:8000/api/health
 ```env
 AI_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:14b
+OLLAMA_MODEL=nemotron-3-super:cloud
 ENVIRONMENT=development
 LOG_LEVEL=INFO
 ```
 
-Environment variables are loaded via `python-dotenv` in `main.py`. The evaluation engine reads `OLLAMA_BASE_URL` and `OLLAMA_MODEL` with fallback defaults.
+Environment variables are loaded via `python-dotenv` in `main.py`. The evaluation engine reads `OLLAMA_BASE_URL` and `OLLAMA_MODEL` with fallback defaults. The cloud model (`nemotron-3-super:cloud`, 120B params) provides fast inference and enables all questions to be evaluated by AI.
 
 ---
 
@@ -267,6 +272,7 @@ All request/response schemas are defined as Pydantic `BaseModel` classes.
 | `IncomeRange` | <500, 500-1500, 1500-3000, 3000-5000, >5000 |
 | `FundingSource` | self, sponsor_us, employer, other |
 | `PurposeOfVisit` | tourism, family_visit, medical, conference, business_meeting, other |
+| `MaritalStatus` | single, married, divorced, widowed |
 
 #### ProfileInput (Main Applicant Profile)
 
@@ -283,6 +289,10 @@ All request/response schemas are defined as Pydantic `BaseModel` classes.
 | `prior_travel` | bool | false |
 | `monthly_income_usd` | str | "1500-3000" |
 | `planned_days` | int | 14 (validated: 1–180) |
+| `applicant_count` | int | 1 (validated: 1–6) |
+| `marital_status` | MaritalStatus | "single" |
+| `age` | int | 30 (validated: 18–80) |
+| `travel_companions` | str | "" |
 
 #### Request/Response Models
 
@@ -310,18 +320,19 @@ All request/response schemas are defined as Pydantic `BaseModel` classes.
 
 ### 6.3 Question Bank (question_bank.py)
 
-65 static questions across 8 categories, stored as a Python dictionary `QUESTIONS`.
+86 realistic questions across 9 categories, stored as a Python dictionary `QUESTIONS`. Questions are phrased to sound like actual consular officers — short, direct, sometimes brusque.
 
 | Category | ID Prefix | Count | Example Questions |
 |----------|-----------|-------|-------------------|
-| **purpose** | p1–p12 | 12 | "What is the purpose of your visit?", "Who are you visiting?", "Where will you stay?" |
-| **return_intent** | r1–r10 | 10 | "How long do you plan to stay?", "Do you have a return ticket?", "What ties do you have to your home country?" |
-| **employment** | e1–e12 | 12 | "What is your occupation?", "How long have you worked there?", "Does your employer know about this trip?" |
-| **financial** | f1–f8 | 8 | "Who is funding your trip?", "How much do you plan to spend?", "What is your bank balance?" |
-| **visa_history** | v1–v6 | 6 | "Have you previously applied for a US visa?", "Have you ever been refused a visa?" |
-| **us_contacts** | u1–u6 | 6 | "Do you have relatives in the US?", "What is your host's occupation?" |
-| **business** | b1–b6 | 6 | "What company do you work for?", "Who will you be meeting?", "What is the nature of the transaction?" |
-| **challenge** | c1–c5 | 5 | "Why should I believe you'll return?", "What makes you different from someone who intends to stay?" |
+| **purpose** | p1–p14 | 14 | "Why are you going now? What’s the occasion?", "Who invited you?", "Walk me through your itinerary." |
+| **return_intent** | r1–r12 | 12 | "How long do you plan to stay?", "Do you have a return ticket?", "What brings you back home after the trip?" |
+| **employment** | e1–e14 | 14 | "What do you do for work?", "How long have you been with that employer?", "Did your company approve time off?" |
+| **financial** | f1–f9 | 9 | "Who’s paying for this trip?", "What’s your monthly salary?", "Show me your bank statement summary." |
+| **visa_history** | v1–v7 | 7 | "Have you been refused a visa before?", "What’s changed since the last refusal?" |
+| **us_contacts** | u1–u8 | 8 | "Who do you know in the US?", "What does your contact there do for work?", "How did you two meet?" |
+| **business** | b1–b7 | 7 | "What meetings do you have scheduled?", "Which company are you visiting and where?" |
+| **challenge** | c1–c7 | 7 | "Why should I believe you’ll come back?", "Convince me you won’t overstay." |
+| **group** | g1–g8 | 8 | "Are you all traveling together?", "Who’s paying for everyone?", "Why is each person going?" |
 
 ---
 
@@ -444,7 +455,7 @@ Compares current answer against all prior applicant responses. If conflicting du
 
 ### 6.6 Full Session Evaluation (evaluation.py)
 
-The comprehensive evaluation engine that produces the final interview report. This is the largest backend module (~880 lines).
+The comprehensive evaluation engine that produces the final interview report. This is the largest backend module (~573 lines).
 
 #### Functions
 
@@ -460,18 +471,18 @@ The comprehensive evaluation engine that produces the final interview report. Th
 | `_call_ollama` | `async (prompt, max_tokens=300) → str` | Low-level Ollama API call |
 | `_parse_json_response` | `(raw: str) → dict` | Extracts JSON from LLM output (handles markdown fences) |
 
-#### Evaluation Strategy (Performance Optimization)
+#### Evaluation Strategy (Cloud Model)
 
-Since the model runs on CPU (~45–50 sec/question), not every question is evaluated by AI:
+With the cloud model (`nemotron-3-super:cloud`, 120B), all questions are evaluated by AI:
 
 ```
 1. Sort answers by priority (flagged answers first)
-2. Evaluate top 3 priority answers via Ollama AI (async)
-3. Evaluate remaining answers via fast keyword fallback (instant)
+2. Evaluate ALL answers via Ollama AI (async)
+3. Keyword fallback is only used if individual AI calls fail
 4. Aggregate all results into the final report
 ```
 
-This keeps total evaluation time under ~3 minutes even on CPU.
+Cloud inference provides fast responses (~5–15s per question), making full AI evaluation practical.
 
 #### Keyword Fallback Logic
 
@@ -516,14 +527,14 @@ The prompt sent to Ollama for each question includes:
 
 ### 6.7 API Server (main.py)
 
-Minimal FastAPI application (67 lines) that wires together all modules.
+Minimal FastAPI application (82 lines) that wires together all modules.
 
 ```python
 # Key configuration
 app = FastAPI(title="US Visa Mock Interview Assistant", version="1.0.0")
 
-# CORS — allows frontend dev server
-origins = ["http://localhost:5173"]
+# CORS — allows frontend dev servers
+origins = ["http://localhost:5173", "http://localhost:5174"]
 
 # Endpoints
 GET  /api/health
@@ -567,13 +578,13 @@ Each endpoint delegates to the appropriate module (`question_selector`, `realtim
 
 ### 7.2 API Client (api.js)
 
-Centralized Axios instance with 5-minute timeout:
+Centralized Axios instance with 10-minute timeout:
 
 ```javascript
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 300000  // 5 minutes (accommodates CPU inference)
+  timeout: 600000  // 10 minutes (accommodates full session evaluation)
 });
 ```
 
@@ -602,17 +613,17 @@ Global styling: `min-h-screen bg-gray-50 text-gray-900`
 
 ### 7.4 Pages
 
-#### 7.4.1 LandingPage.jsx (36 lines)
+#### 7.4.1 LandingPage.jsx (46 lines)
 
 The hero/landing page with:
 - Heading: "Practice Your US Visa Interview Before the Real One" with 🇺🇸 emoji
-- Three trust badges: question patterns, specific feedback, 100% free
+- Four trust badges: "Realistic officer questions", "Voice & text input", "Officer speaks aloud", "Solo & group interviews"
 - CTA button: **"Start Free Practice Session"** → navigates to `/profile`
 - Disclaimer: "This tool is for practice only and does not constitute legal advice"
 
-#### 7.4.2 ProfileSetup.jsx (280+ lines)
+#### 7.4.2 ProfileSetup.jsx (316 lines)
 
-A 12-field intake form that collects the applicant's profile:
+A 16-field intake form that collects the applicant's profile, including group interview support:
 
 | Field | Control Type | Options/Range |
 |-------|-------------|---------------|
@@ -627,6 +638,10 @@ A 12-field intake form that collects the applicant's profile:
 | prior_travel | Checkbox | — |
 | monthly_income_usd | Dropdown | <500, 500-1500, 1500-3000, 3000-5000, >5000 |
 | planned_days | Number input | 1–180 |
+| applicant_count | Button selector (1–6) | Shows "Solo interview" or "Group interview — N applicants at the window" |
+| marital_status | Dropdown | single, married, divorced, widowed |
+| age | Number input | 18–80 |
+| travel_companions | Text input (conditional, shows when applicant_count > 1) | Free text |
 
 **Behavior:**
 - Calls `startSession(profile)` on submit
@@ -634,22 +649,31 @@ A 12-field intake form that collects the applicant's profile:
 - Error handling: displays "Could not start session. Is the backend running?"
 - On success navigates to `/briefing`
 
-#### 7.4.3 Briefing.jsx (35 lines)
+#### 7.4.3 Briefing.jsx (144 lines)
 
-Pre-interview screen showing:
-- **Rules:** (1) Answer in 2–4 sentences, (2) Don't volunteer extra information, (3) Don't ask questions back, (4) Be specific with dates/names/places
-- **Duration estimate:** ~8–12 minutes, 10–12 questions
-- **Disclaimer:** Yellow warning box
-- **Button:** "Begin Interview" → `/interview`
+Pre-interview screen with **interview rules** and **settings panel**:
 
-#### 7.4.4 Interview.jsx (380+ lines)
+**Rules section:**
+- (1) Answer in 2–4 sentences, (2) Don't volunteer extra information, (3) Don't ask questions back, (4) Be specific with dates/names/places
+- Duration estimate: ~8–12 minutes, 10–14 questions
 
-The dynamic interview engine — the most complex frontend component.
+**Interview Settings Panel:**
+| Setting | Control | Default | Purpose |
+|---------|---------|---------|---------|
+| Officer speaks questions | Toggle switch | ON | Enable/disable TTS |
+| Show question text | Toggle switch | ON | Show/hide written text |
+| Default input mode | Type/Speak selector | Type | Initial input method |
+
+Settings are saved to `localStorage` as `visa_interview_settings` when "Begin Interview" is clicked.
+
+#### 7.4.4 Interview.jsx (572 lines)
+
+The dynamic interview engine — the most complex frontend component. Features TTS (officer speaks), STT (voice input), and an animated speaking orb visualizer.
 
 **Constants:**
 | Constant | Value |
 |----------|-------|
-| MAX_TOTAL_QUESTIONS | 14 |
+| MAX_TOTAL_QUESTIONS | 16 |
 | Answer character limit | 500 |
 | Character warning threshold | 400 |
 | Hint auto-dismiss time | 4000 ms |
@@ -666,25 +690,50 @@ The dynamic interview engine — the most complex frontend component.
 - `activeHint` — currently visible hint toast
 - `submitting` — loading state for answer submission
 - `showOpener` — warmup screen visibility
+- `officerSpeaks` — TTS enabled/disabled (from briefing settings)
+- `showQuestionText` — text visibility toggle
+- `isSpeaking` — whether TTS is currently playing
+- `inputMode` — 'text' or 'voice'
+- `isListening` — whether STT is active
+- `voiceSupported` — whether browser supports Speech Recognition
 
 **Interview Flow:**
-1. **Opening warmup:** "Good morning. Can I see your passport and appointment confirmation?" → User clicks "Yes, here you go →"
-2. **Question display** with category badge and progress counter
-3. **Answer textarea** with 500-char limit and warning at 400
-4. **Submit answer** → calls `submitAnswer()` API
-5. **Real-time feedback:**
+1. **Opening warmup:** "Good morning. Can I see your passport and appointment confirmation?" — spoken aloud via TTS with animated SpeakingOrb → User clicks "Yes, here you go →"
+2. **Question display** with SpeakingOrb visualizer (animated when speaking), replay 🔊 and visibility 👁 buttons
+3. **Input mode toggle:** Type ⌨️ or Speak 🎤
+4. **Answer textarea** with 500-char limit and warning at 400 (voice transcription populates here)
+5. **Submit answer** → stops TTS/STT, calls `submitAnswer()` API
+6. **Real-time feedback:**
    - Color indicator: ✅ green (strong), ⚠️ yellow (weak), 🚩 red (red_flag)
    - Hint toast auto-dismisses after 4 seconds
    - Contradiction warning if detected
    - Follow-up badge if question is a follow-up
-6. **Dynamic follow-up insertion:** If the API returns a follow-up question, it's inserted at the next position in the queue
-7. **Finish:** After all questions, calls `evaluateSession()` → stores report in `visa_report` localStorage → navigates to `/report`
+7. **Dynamic follow-up insertion:** If the API returns a follow-up question, it's inserted at the next position in the queue
+8. **Finish:** After all questions, calls `evaluateSession()` → stores report in `visa_report` localStorage → navigates to `/report`
+
+**TTS (Text-to-Speech):**
+- Uses Web Speech API `SpeechSynthesis`
+- Ranked voice selection: Google US English → Microsoft Mark/David → en-US male → en-US remote → fallback
+- Rate: 0.92, Pitch: 0.85 (professional, authoritative tone)
+- Speaks opener greeting, each new question, and can be replayed via 🔊 button
+
+**STT (Speech-to-Text):**
+- Uses Web Speech API `SpeechRecognition`
+- Continuous mode with interim results
+- Transcription populates the answer textarea in real-time
+
+**SpeakingOrb Component:**
+- Canvas-based animated circle with 48 independently-phased spikes
+- Active state: organic audio-visualizer-like spike animation
+- Idle state: calm breathing glow
+- Sizes: 80px (opener screen), 48px (question view)
+- Center label: "CO" (Consular Officer)
 
 **localStorage usage:**
-- Reads: `visa_session`
+- Reads: `visa_session`, `visa_interview_settings`
 - Writes: `visa_answers`, `visa_report`
 
-#### 7.4.5 Report.jsx (650+ lines)
+#### 7.4.5 Report.jsx (546 lines)
 
 The comprehensive evaluation report — the largest frontend component.
 
@@ -970,6 +1019,7 @@ The 214(b)-based approval analysis considers both answer quality and profile ris
 | Unemployed | −10 points |
 | US family on immigration-type visa | −5 points |
 | No prior international travel | −3 points |
+| Young & single (age < 30, unmarried) | −4 points |
 
 **HIGH_DENIAL_COUNTRIES (evaluation.py):** India, China, Nigeria, Pakistan, Bangladesh, Ghana, Iran, Iraq, Ethiopia, Nepal
 
@@ -1023,16 +1073,16 @@ The action plan groups improvement tasks by urgency:
 │                    INTERVIEW LOOP                      │
 │                                                        │
 │  For each question in questionQueue:                   │
-│    1. Display question                                 │
-│    2. User types answer (max 500 chars)                │
+│    1. Display question (officer speaks via TTS)        │
+│    2. User types or speaks answer (max 500 chars)      │
 │    3. Submit → POST /session/answer                    │
 │    4. Show color indicator (green/yellow/red)           │
 │    5. Show hint toast (4s auto-dismiss)                 │
 │    6. Show contradiction warning if detected            │
 │    7. If follow-up returned → insert into queue         │
-│    8. Next question                                     │
+│    8. Next question (auto-spoken via TTS)               │
 │                                                        │
-│  Hard cap: 14 total questions                           │
+│  Hard cap: 16 total questions                           │
 │  Max 2 follow-ups per original question                 │
 └───────────────────┬───────────────────────────────────┘
                     │
@@ -1060,6 +1110,7 @@ The action plan groups improvement tasks by urgency:
 | `visa_session` | ProfileSetup | Interview, Report | session_id, questions[], risk_flags[], profile |
 | `visa_answers` | Interview | — | All submitted answers |
 | `visa_report` | Interview (after evaluation) | Report | Full EvaluationResponse |
+| `visa_interview_settings` | Briefing | Interview | officerSpeaks, showQuestionText, defaultInputMode |
 
 ---
 
@@ -1069,18 +1120,19 @@ The action plan groups improvement tasks by urgency:
 
 | Setting | Value | File | Purpose |
 |---------|-------|------|---------|
-| Backend CORS origin | `http://localhost:5173` | main.py | Allows frontend dev server |
+| Backend CORS origins | `http://localhost:5173`, `http://localhost:5174` | main.py | Allows frontend dev servers |
 | Ollama timeout | 180 seconds | evaluation.py | Per-question AI call timeout |
 | Ollama temperature | 0.3 | evaluation.py | Low creativity for consistent eval |
 | Ollama top_p | 0.9 | evaluation.py | Nucleus sampling threshold |
 | Per-question max tokens | 400 | evaluation.py | AI response length limit |
 | Real-time eval max tokens | 200 | realtime_eval.py | Faster per-answer evaluation |
-| Frontend axios timeout | 300,000 ms (5 min) | api.js | Accommodates full evaluation |
-| Interview max questions | 14 | Interview.jsx | Hard cap including follow-ups |
+| Frontend axios timeout | 600,000 ms (10 min) | api.js | Accommodates full evaluation |
+| Interview max questions | 16 | Interview.jsx | Hard cap including follow-ups |
 | Answer character limit | 500 | Interview.jsx | Enforces conciseness |
 | Hint display time | 4,000 ms | Interview.jsx | Auto-dismiss toast |
 | Max follow-ups per question | 2 | realtime_eval.py | Prevents infinite follow-up loops |
-| Max AI evaluations (full) | 3 | evaluation.py | Speed optimization for CPU |
+| TTS voice rate | 0.92 | Interview.jsx | Professional speaking pace |
+| TTS voice pitch | 0.85 | Interview.jsx | Authoritative tone |
 | Frontend dev port | 5173 | vite.config.js | Vite dev server |
 | Backend port | 8000 | (CLI flag) | Uvicorn |
 | Ollama port | 11434 | .env | Default Ollama port |
@@ -1166,6 +1218,56 @@ The action plan groups improvement tasks by urgency:
 
 ---
 
+### Cloud Model + Voice I/O + Group Interviews (Complete ✅)
+
+**Model Upgrade:**
+- Upgraded from `qwen2.5:14b` (local CPU) → `nemotron-3-super:cloud` (120B params, cloud inference)
+- All questions now evaluated by AI (removed the 3-question AI limit since cloud model is fast)
+- Response times dropped from ~45–50s to ~5–15s per question
+
+**Backend — New Profile Fields & Group Support:**
+- Added `MaritalStatus` enum (single, married, divorced, widowed)
+- Added to `ProfileInput`: `applicant_count` (1–6), `marital_status`, `age` (18–80), `travel_companions`
+- Added "group" question category with 8 questions (g1–g8) for multi-applicant interviews
+- Question selector includes group questions when `applicant_count > 1`
+- Added `young_single` risk flag (single + age < 30) with −4 point deduction
+- Updated all AI prompts (realtime_eval + evaluation) with new profile fields
+
+**Backend — Question Bank Revamp:**
+- Complete rewrite of all questions with realistic consular officer phrasing
+- Questions are now short, direct, sometimes brusque — matching real interview transcripts
+- Expanded from 65 to 86 questions across 9 categories (added "group" category)
+
+**Frontend — Voice Input (STT):**
+- Web Speech API `SpeechRecognition` for voice-to-text input
+- Continuous mode with interim results, real-time transcription
+- Toggle between Type ⌨️ and Speak 🎤 input modes
+
+**Frontend — Officer Speaks (TTS):**
+- Web Speech API `SpeechSynthesis` for text-to-speech
+- Ranked voice selection prioritizing Google US English and male voices
+- Rate: 0.92, Pitch: 0.85 for professional, authoritative tone
+- Speaks opener greeting, each new question automatically
+- Replay 🔊 and text visibility toggle 👁 buttons
+
+**Frontend — SpeakingOrb Visualizer:**
+- New `SpeakingOrb.jsx` component — canvas-based animated circle
+- 48 independently-phased spikes create organic audio-visualizer effect when speaking
+- Calm breathing glow when idle, "CO" label centered
+- Used in opener (80px) and question view (48px)
+
+**Frontend — Interview Settings:**
+- Briefing page rewritten with settings panel
+- Toggle: Officer speaks (ON/OFF), Show question text (ON/OFF), Default input mode (Type/Speak)
+- Settings saved to localStorage as `visa_interview_settings`
+
+**Frontend — ProfileSetup Enhancements:**
+- Applicant count selector (1–6) with "Solo interview" / "Group interview" label
+- Travel companions text input (conditional on group)
+- Age number input, marital status dropdown
+
+---
+
 ### Stage 4 — Progress Tracking & History (Deferred ⬜)
 
 Explicitly deferred per user request. Would include:
@@ -1182,22 +1284,23 @@ Explicitly deferred per user request. Would include:
 
 | Limitation | Impact | Mitigation |
 |------------|--------|------------|
-| CPU-only inference | ~45–50s per AI evaluation | Only 3 priority questions use AI; rest use keyword fallback |
 | No database | Sessions are ephemeral (localStorage only) | Sufficient for practice tool |
 | Single-user | No authentication or multi-tenancy | Designed as a personal practice tool |
 | B1/B2 only | Does not cover F1, H1B, etc. | Focused scope per PRD |
-| CORS locked to localhost:5173 | Cannot deploy without config change | Development tool |
+| CORS locked to localhost | Cannot deploy without config change | Development tool |
 | No document upload | Cannot simulate "show me your documents" | Focuses on verbal Q&A |
 | English only | No multilingual support | — |
+| TTS voice quality | Browser-dependent; varies across OS/browser | Ranked voice selection picks best available |
+| STT browser support | Chrome/Edge only (Web Speech API) | Falls back to text-only input on unsupported browsers |
 
 ### Potential Improvements
 
-- **GPU inference:** With 8+ GB VRAM, model loading + inference would be 5–10× faster
 - **Database (PostgreSQL/SQLite):** Persistent session storage for progress tracking
 - **Authentication:** User accounts for history tracking
 - **Additional visa types:** F1, H1B, L1 coverage
-- **Voice input:** Speech-to-text for realistic practice
 - **Deployment:** Docker containerization, cloud hosting
+- **Premium TTS:** Integration with cloud TTS APIs (e.g., ElevenLabs, Azure) for more natural voices
+- **Video avatar:** Animated talking head for officer representation
 
 ---
 
