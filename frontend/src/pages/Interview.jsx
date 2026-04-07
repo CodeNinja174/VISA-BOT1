@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { evaluateSession, submitAnswer } from '../api'
+import SpeakingOrb from '../components/SpeakingOrb'
 
 const MAX_TOTAL_QUESTIONS = 16
 
@@ -99,20 +100,33 @@ export default function Interview() {
     }
   }, [])
 
-  // TTS: speak text aloud as the officer
+  // TTS: speak text aloud as the officer — professional, authoritative tone
   const speakText = useCallback((text) => {
     if (!officerSpeaks || !window.speechSynthesis) return
     window.speechSynthesis.cancel()
     const utter = new SpeechSynthesisUtterance(text)
     utter.lang = 'en-US'
-    utter.rate = 0.95
-    utter.pitch = 0.9
-    // Try to pick a male-sounding English voice
+    utter.rate = 0.92
+    utter.pitch = 0.85
+    utter.volume = 1.0
+    // Pick the most realistic US English voice available
     const voices = window.speechSynthesis.getVoices()
-    const preferred = voices.find(
-      (v) => v.lang.startsWith('en') && /male|david|james|daniel|google us/i.test(v.name)
-    ) || voices.find((v) => v.lang.startsWith('en-US'))
-    if (preferred) utter.voice = preferred
+    // Priority: Google US English > Microsoft Mark/David > any en-US male > any en-US
+    const ranked = [
+      (v) => /google us english/i.test(v.name),
+      (v) => v.lang === 'en-US' && /mark|david|guy|eric|aaron/i.test(v.name),
+      (v) => v.lang === 'en-US' && /male/i.test(v.name),
+      (v) => v.lang === 'en-US' && !v.localService,
+      (v) => v.lang === 'en-US',
+      (v) => v.lang.startsWith('en') && /male|david|james|daniel/i.test(v.name),
+      (v) => v.lang.startsWith('en'),
+    ]
+    let picked = null
+    for (const test of ranked) {
+      picked = voices.find(test)
+      if (picked) break
+    }
+    if (picked) utter.voice = picked
     utter.onstart = () => setIsSpeaking(true)
     utter.onend = () => setIsSpeaking(false)
     utter.onerror = () => setIsSpeaking(false)
@@ -310,31 +324,25 @@ export default function Interview() {
     return (
       <div className="max-w-2xl mx-auto py-16 px-4">
         <div className="bg-white border rounded-xl p-8 shadow-sm space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-700 rounded-full flex items-center justify-center text-white font-bold text-sm">
-              CO
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">Consular Officer</span>
-              {isSpeaking && (
-                <span className="flex items-center gap-1 text-xs text-blue-600">
-                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-                  Speaking
-                </span>
-              )}
-            </div>
+          <div className="flex flex-col items-center gap-4">
+            <SpeakingOrb active={isSpeaking} size={80} />
+            <span className="text-sm font-medium text-gray-500 tracking-wide">
+              Consular Officer
+            </span>
           </div>
 
-          <p className="text-lg font-medium text-gray-800">
+          <p className="text-lg font-medium text-gray-800 text-center">
             "Good morning. Can I see your passport and appointment confirmation?"
           </p>
 
-          <button
-            onClick={handleOpenerContinue}
-            className="px-6 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition cursor-pointer"
-          >
-            Yes, here you go →
-          </button>
+          <div className="flex justify-center">
+            <button
+              onClick={handleOpenerContinue}
+              className="px-6 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition cursor-pointer"
+            >
+              Yes, here you go →
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -429,21 +437,12 @@ export default function Interview() {
       <div className="bg-white border rounded-xl p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${isSpeaking ? 'bg-blue-600 ring-4 ring-blue-200 animate-pulse' : 'bg-blue-700'}`}>
-              CO
-            </div>
+            <SpeakingOrb active={isSpeaking} size={48} />
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">Consular Officer</span>
               {isFollowUp && (
                 <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
                   Follow-up
-                </span>
-              )}
-              {isSpeaking && (
-                <span className="text-xs text-blue-600 flex items-center gap-1">
-                  <span className="w-1 h-3 bg-blue-500 rounded animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1 h-3 bg-blue-500 rounded animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1 h-3 bg-blue-500 rounded animate-bounce" style={{ animationDelay: '300ms' }} />
                 </span>
               )}
             </div>
