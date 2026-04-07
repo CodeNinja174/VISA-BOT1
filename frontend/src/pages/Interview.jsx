@@ -29,6 +29,58 @@ export default function Interview() {
   const [activeHint, setActiveHint] = useState(null)
   const hintTimerRef = useRef(null)
 
+  // Voice input state
+  const [inputMode, setInputMode] = useState('text') // 'text' or 'voice'
+  const [isListening, setIsListening] = useState(false)
+  const [voiceSupported, setVoiceSupported] = useState(false)
+  const recognitionRef = useRef(null)
+
+  // Check for Speech Recognition support
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (SpeechRecognition) {
+      setVoiceSupported(true)
+      const recognition = new SpeechRecognition()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = 'en-US'
+      recognition.maxAlternatives = 1
+
+      let finalTranscript = ''
+
+      recognition.onresult = (event) => {
+        let interim = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript
+          } else {
+            interim = transcript
+          }
+        }
+        const combined = (finalTranscript + interim).slice(0, 500)
+        setCurrentAnswer(combined)
+      }
+
+      recognition.onend = () => {
+        setIsListening(false)
+      }
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error)
+        setIsListening(false)
+      }
+
+      recognitionRef.current = recognition
+      recognitionRef.current._resetTranscript = () => { finalTranscript = '' }
+    }
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort() } catch {}
+      }
+    }
+  }, [])
+
   useEffect(() => {
     const stored = localStorage.getItem('visa_session')
     if (!stored) {
@@ -56,8 +108,29 @@ export default function Interview() {
 
   const handleOpenerContinue = () => setShowOpener(false)
 
+  const startListening = () => {
+    if (!recognitionRef.current) return
+    recognitionRef.current._resetTranscript()
+    setCurrentAnswer('')
+    try {
+      recognitionRef.current.start()
+      setIsListening(true)
+    } catch (err) {
+      console.error('Failed to start recognition:', err)
+    }
+  }
+
+  const stopListening = () => {
+    if (!recognitionRef.current) return
+    recognitionRef.current.stop()
+    setIsListening(false)
+  }
+
   const handleSubmit = async () => {
     if (!currentAnswer.trim() || submitting) return
+
+    // Stop voice recognition if active
+    if (isListening) stopListening()
 
     const q = questionQueue[currentIndex]
     const answerText = currentAnswer.trim()
@@ -287,13 +360,63 @@ export default function Interview() {
       </div>
 
       {/* Answer input */}
-      <div className="space-y-2">
+      <div className="space-y-3">
+        {/* Input mode toggle */}
+        {voiceSupported && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 mr-1">Input:</span>
+            <button
+              onClick={() => { setInputMode('text'); if (isListening) stopListening() }}
+              className={`px-3 py-1 text-xs rounded-full border transition cursor-pointer ${
+                inputMode === 'text'
+                  ? 'bg-blue-700 text-white border-blue-700'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+              }`}
+            >
+              ⌨️ Type
+            </button>
+            <button
+              onClick={() => setInputMode('voice')}
+              className={`px-3 py-1 text-xs rounded-full border transition cursor-pointer ${
+                inputMode === 'voice'
+                  ? 'bg-blue-700 text-white border-blue-700'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+              }`}
+            >
+              🎤 Speak
+            </button>
+          </div>
+        )}
+
+        {/* Voice controls */}
+        {inputMode === 'voice' && voiceSupported && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={isListening ? stopListening : startListening}
+              disabled={submitting}
+              className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition cursor-pointer disabled:opacity-40 ${
+                isListening
+                  ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-200'
+                  : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-700 border border-gray-300'
+              }`}
+              title={isListening ? 'Stop recording' : 'Start recording'}
+            >
+              {isListening ? '⏹' : '🎤'}
+            </button>
+            <span className={`text-sm ${isListening ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+              {isListening ? '🔴 Listening... speak now' : 'Tap mic to start'}
+            </span>
+          </div>
+        )}
+
         <textarea
           value={currentAnswer}
           onChange={(e) => {
             if (e.target.value.length <= 500) setCurrentAnswer(e.target.value)
           }}
-          placeholder="Type your answer here..."
+          placeholder={inputMode === 'voice' && voiceSupported
+            ? 'Your speech will appear here… you can also edit it'
+            : 'Type your answer here...'}
           rows={4}
           disabled={submitting}
           className="w-full border border-gray-300 rounded-lg px-4 py-3 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:opacity-50"
